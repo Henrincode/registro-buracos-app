@@ -21,7 +21,7 @@ export default function Index() {
         Desvia.AI!
       </Text>
       <Container gap={20} padding={20} >
-        <Input placeHodler="seu@email.com" />
+        <Input  placeHodler="seu@email.com" />
         <Input placeHodler="suaS3nh@" />
         <View style={{ flexDirection: 'row', gap: 20 }}>
           <Button text="Entrar" flex />
