@@ -1,41 +1,100 @@
 import Button from "@/components/Button";
 import Container from "@/components/Component";
 import Input from "@/components/Form/Input";
-import { Redirect, router } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import tw from "@/styles/tailwindColors";
+import { router } from "expo-router";
+import { useState } from "react";
+import { StyleSheet, Text, View, Alert } from "react-native";
+import { useUsersDatabase } from "@/data/useUsersDatabase";
 
-export default function Index() {
+export default function Login() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
 
+  const userDb = useUsersDatabase();
 
-  // return <Redirect href={'/create'} />
-  
+  async function handleLogin() {
+    setErrorMsg("");
+
+    if (email.trim() === "" || password.trim() === "") {
+      setErrorMsg("Preencha e-mail e senha para entrar.");
+      return;
+    }
+
+    try {
+      // Valida o e-mail e faz o hash da senha enviada para comparar com o banco
+      const user = await userDb.verifyLogin(
+        email.trim().toLowerCase(),
+        password
+      );
+
+      if (!user) {
+        setErrorMsg("E-mail ou senha incorretos.");
+        return;
+      }
+
+      // Login com sucesso! Navega para a Dashboard
+      router.replace("/dashboard");
+    } catch (error) {
+      Alert.alert("Erro", "Ocorreu um erro ao tentar realizar o login.");
+    }
+  }
+
   return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <Text style={styles.title}>
-        Desvia.AI!
-      </Text>
-      <Container gap={20} padding={20} >
-        <Input  placeHodler="seu@email.com" />
-        <Input placeHodler="suaS3nh@" />
-        <View style={{ flexDirection: 'row', gap: 20 }}>
-          <Button text="Entrar" flex />
-          <Button text="Cadastrar" flex onPress={() => router.push('/create')} />
+    <View style={styles.container}>
+      <Text style={styles.title}>Desvia.AI!</Text>
+
+      <Container gap={20} padding={20}>
+        <Input
+          value={email}
+          onChange={setEmail}
+          placeHodler="seu@email.com"
+        />
+        <Input
+          value={password}
+          onChange={setPassword}
+          placeHodler="suaS3nh@"
+        />
+
+        {errorMsg !== "" && (
+          <View style={styles.msg}>
+            <Text style={styles.msgText}>{errorMsg}</Text>
+          </View>
+        )}
+
+        <View style={{ flexDirection: "row", gap: 20 }}>
+          <Button text="Entrar" flex onPress={handleLogin} />
+          <Button
+            text="Cadastrar"
+            flex
+            onPress={() => router.push("/create")}
+          />
         </View>
       </Container>
     </View>
   );
 }
 
-
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#020617",
+  },
   title: {
     fontSize: 48,
-    color: 'white'
-  }
-})
+    color: "white",
+    marginBottom: 20,
+  },
+  msg: {
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: tw.red["950"] + "40",
+  },
+  msgText: {
+    color: "white",
+    textAlign: "center",
+  },
+});
