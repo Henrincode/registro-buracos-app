@@ -1,63 +1,57 @@
-import { useSQLiteContext } from "expo-sqlite"
-
-export type AlertCreate = {
-  user_id: number
-  latitude: number
-  longitude: number
-  title: string
-  category?: string | null
-  status?: string | null
-  ilink?: string | null
-  observation?: string | null
-}
+import { useSQLiteContext } from "expo-sqlite";
 
 export type AlertResponse = {
-  id: number
-  user_id: number
-  user_name: string
-  user_email: string
-  latitude: number
-  longitude: number
-  title: string
-  category: string | null
-  status: string
-  ilink: string | null
-  observation: string | null
-  created_at: string
-  updated_at: string
-}
+  id: number;
+  user_id: number;
+  user_name?: string;
+  user_email?: string;
+  latitude: number;
+  longitude: number;
+  title: string;
+  category?: string;
+  status: string;
+  ilink?: string;
+  observation?: string;
+  zip?: string;
+  number?: string;
+  street?: string;
+  neighborhood?: string;
+  city?: string;
+  complement?: string;
+  created_at: string;
+  updated_at: string;
+};
 
-export type AlertUpdate = Partial<Omit<AlertCreate, "user_id">> & {
-  id: number
-}
+export type CreateAlertData = {
+  user_id: number;
+  latitude: number;
+  longitude: number;
+  title: string;
+  category?: string;
+  status?: string;
+  ilink?: string;
+  observation?: string;
+  zip?: string;
+  number?: string;
+  street?: string;
+  neighborhood?: string;
+  city?: string;
+  complement?: string;
+};
 
 export function useAlertsDatabase() {
-  const database = useSQLiteContext()
+  const database = useSQLiteContext();
 
-  // 1. Criar novo alerta
-  async function create(data: AlertCreate) {
+  async function create(data: CreateAlertData) {
     const statement = await database.prepareAsync(`
       INSERT INTO alerts (
-        user_id, 
-        latitude, 
-        longitude, 
-        title, 
-        category, 
-        status, 
-        ilink, 
-        observation
+        user_id, latitude, longitude, title, category, status, ilink, observation,
+        zip, number, street, neighborhood, city, complement
+      ) VALUES (
+        $user_id, $latitude, $longitude, $title, $category, $status, $ilink, $observation,
+        $zip, $number, $street, $neighborhood, $city, $complement
       )
-      VALUES (
-        $user_id, 
-        $latitude, 
-        $longitude, 
-        $title, 
-        $category, 
-        $status, 
-        $ilink, 
-        $observation
-      )
-    `)
+    `);
 
     try {
       const result = await statement.executeAsync({
@@ -65,69 +59,25 @@ export function useAlertsDatabase() {
         $latitude: data.latitude,
         $longitude: data.longitude,
         $title: data.title,
-        $category: data.category ?? null,
-        $status: data.status ?? "open",
-        $ilink: data.ilink ?? null,
-        $observation: data.observation ?? null,
-      })
+        $category: data.category || "Buraco",
+        $status: data.status || "open",
+        $ilink: data.ilink || null,
+        $observation: data.observation || null,
+        $zip: data.zip || null,
+        $number: data.number || null,
+        $street: data.street || null,
+        $neighborhood: data.neighborhood || null,
+        $city: data.city || null,
+        $complement: data.complement || null,
+      });
 
-      return result.lastInsertRowId
+      return result.lastInsertRowId;
     } finally {
-      await statement.finalizeAsync()
+      await statement.finalizeAsync();
     }
   }
 
-  // 2. Listar todos os alertas (com dados do usuário criador)
-  async function listAll() {
-    return await database.getAllAsync<AlertResponse>(`
-      SELECT 
-        alerts.id,
-        alerts.user_id,
-        alerts.latitude,
-        alerts.longitude,
-        alerts.title,
-        alerts.category,
-        alerts.status,
-        alerts.ilink,
-        alerts.observation,
-        alerts.created_at,
-        alerts.updated_at,
-        users.name AS user_name,
-        users.email AS user_email
-      FROM alerts
-      INNER JOIN users ON users.id = alerts.user_id
-      ORDER BY alerts.created_at DESC
-    `)
-  }
-
-  // 3. Buscar um alerta específico pelo ID (útil para carregar na tela de edição)
-  async function show(id: number) {
-    return await database.getFirstAsync<AlertResponse>(
-      `
-      SELECT 
-        alerts.id,
-        alerts.user_id,
-        alerts.latitude,
-        alerts.longitude,
-        alerts.title,
-        alerts.category,
-        alerts.status,
-        alerts.ilink,
-        alerts.observation,
-        alerts.created_at,
-        alerts.updated_at,
-        users.name AS user_name,
-        users.email AS user_email
-      FROM alerts
-      INNER JOIN users ON users.id = alerts.user_id
-      WHERE alerts.id = $id
-    `,
-      { $id: id }
-    )
-  }
-
-  // 4. Atualizar um alerta existente
-  async function update(data: AlertUpdate) {
+  async function update(id: number, data: Partial<CreateAlertData>) {
     const statement = await database.prepareAsync(`
       UPDATE alerts SET
         title = COALESCE($title, title),
@@ -135,38 +85,79 @@ export function useAlertsDatabase() {
         status = COALESCE($status, status),
         ilink = COALESCE($ilink, ilink),
         observation = COALESCE($observation, observation),
-        latitude = COALESCE($latitude, latitude),
-        longitude = COALESCE($longitude, longitude),
+        zip = COALESCE($zip, zip),
+        number = COALESCE($number, number),
+        street = COALESCE($street, street),
+        neighborhood = COALESCE($neighborhood, neighborhood),
+        city = COALESCE($city, city),
+        complement = COALESCE($complement, complement),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $id
-    `)
+    `);
 
     try {
       await statement.executeAsync({
-        $id: data.id,
-        $title: data.title ?? null,
-        $category: data.category ?? null,
-        $status: data.status ?? null,
-        $ilink: data.ilink ?? null,
-        $observation: data.observation ?? null,
-        $latitude: data.latitude ?? null,
-        $longitude: data.longitude ?? null,
-      })
+        $id: id,
+        $title: data.title || null,
+        $category: data.category || null,
+        $status: data.status || null,
+        $ilink: data.ilink || null,
+        $observation: data.observation || null,
+        $zip: data.zip || null,
+        $number: data.number || null,
+        $street: data.street || null,
+        $neighborhood: data.neighborhood || null,
+        $city: data.city || null,
+        $complement: data.complement || null,
+      });
     } finally {
-      await statement.finalizeAsync()
+      await statement.finalizeAsync();
     }
   }
 
-  // 5. Apagar alerta
-  async function remove(id: number) {
-    await database.runAsync("DELETE FROM alerts WHERE id = ?", id)
+  async function listAll(): Promise<AlertResponse[]> {
+    try {
+      const query = `
+        SELECT 
+          alerts.*,
+          users.name as user_name,
+          users.email as user_email
+        FROM alerts
+        INNER JOIN users ON users.id = alerts.user_id
+        ORDER BY alerts.created_at DESC
+      `;
+      const response = await database.getAllAsync<AlertResponse>(query);
+      return response;
+    } catch (error) {
+      throw error;
+    }
   }
 
-  return {
-    create,
-    listAll,
-    show,
-    update,
-    remove,
+  async function getById(id: number): Promise<AlertResponse | null> {
+    try {
+      const query = `
+        SELECT 
+          alerts.*,
+          users.name as user_name,
+          users.email as user_email
+        FROM alerts
+        INNER JOIN users ON users.id = alerts.user_id
+        WHERE alerts.id = ?
+      `;
+      const response = await database.getFirstAsync<AlertResponse>(query, [id]);
+      return response || null;
+    } catch (error) {
+      throw error;
+    }
   }
+
+  async function remove(id: number) {
+    try {
+      await database.runAsync("DELETE FROM alerts WHERE id = ?", [id]);
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  return { create, update, listAll, getById, remove };
 }

@@ -1,11 +1,14 @@
+import React, { useState } from "react";
+import { StyleSheet, Text, View, Alert } from "react-native";
+import { router } from "expo-router";
+
 import Button from "@/components/Button";
 import Container from "@/components/Component";
 import Input from "@/components/Form/Input";
 import tw from "@/styles/tailwindColors";
-import { router } from "expo-router";
-import { useState } from "react";
-import { StyleSheet, Text, View, Alert } from "react-native";
+
 import { useUsersDatabase } from "@/data/useUsersDatabase";
+import { useAuth } from "@/app/_layout";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -13,6 +16,7 @@ export default function Login() {
   const [errorMsg, setErrorMsg] = useState("");
 
   const userDb = useUsersDatabase();
+  const { signIn } = useAuth();
 
   async function handleLogin() {
     setErrorMsg("");
@@ -23,7 +27,7 @@ export default function Login() {
     }
 
     try {
-      // Valida o e-mail e faz o hash da senha enviada para comparar com o banco
+      // Valida credenciais no SQLite aplicando o hash SHA-256
       const user = await userDb.verifyLogin(
         email.trim().toLowerCase(),
         password
@@ -34,7 +38,8 @@ export default function Login() {
         return;
       }
 
-      // Login com sucesso! Navega para a Dashboard
+      // Salva o usuário no contexto global e vai para a dashboard
+      signIn(user);
       router.replace("/dashboard");
     } catch (error) {
       Alert.alert("Erro", "Ocorreu um erro ao tentar realizar o login.");

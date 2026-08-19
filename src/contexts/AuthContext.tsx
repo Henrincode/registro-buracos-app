@@ -1,9 +1,5 @@
 import React, { createContext, useContext, useState } from "react";
-import { Stack } from "expo-router";
-import { SQLiteProvider } from "expo-sqlite";
-
 import { UserResponse } from "@/data/useUsersDatabase";
-import { migrate } from "@/data/migrate"; // 👈 Importação da sua função de migração
 
 type AuthContextData = {
   user: UserResponse | null;
@@ -33,14 +29,4 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   return useContext(AuthContext);
-}
-
-export default function Layout() {
-  return (
-    <SQLiteProvider databaseName="database.db" onInit={migrate}>
-      <AuthProvider>
-        <Stack screenOptions={{ headerShown: false }} />
-      </AuthProvider>
-    </SQLiteProvider>
-  );
 }

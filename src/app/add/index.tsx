@@ -4,85 +4,105 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  Alert,
   Image,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
 } from "react-native";
-import { useLocalSearchParams, router } from "expo-router";
-import * as ImagePicker from "expo-image-picker";
+import { router, useLocalSearchParams } from "expo-router";
 import * as Location from "expo-location";
-import MapView, { Marker, MapPressEvent } from "react-native-maps";
+import * as ImagePicker from "expo-image-picker";
 
 import Button from "@/components/Button";
 import Input from "@/components/Form/Input";
-import Container from "@/components/Component";
 import { useAlertsDatabase } from "@/data/useAlertsDatabase";
+import { useAuth } from "@/app/_layout";
 
 export default function AddOrEditAlert() {
   const { id } = useLocalSearchParams<{ id?: string }>();
-  const isEditing = Boolean(id);
+  const isEditing = !!id;
 
-  // Estados do formulário
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("Buraco");
+  const [zip, setZip] = useState("");
+  const [street, setStreet] = useState("");
+  const [number, setNumber] = useState("");
+  const [neighborhood, setNeighborhood] = useState("");
+  const [city, setCity] = useState("");
+  const [complement, setComplement] = useState("");
   const [observation, setObservation] = useState("");
   const [imageUri, setImageUri] = useState<string | null>(null);
 
-  // Coordenadas
   const [location, setLocation] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
 
-  const [loading, setLoading] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const alertsDb = useAlertsDatabase();
+  const { user } = useAuth();
 
-  // Carrega os dados se for MODO EDIÇÃO
   useEffect(() => {
-    if (isEditing && id) {
-      loadAlertData(Number(id));
+    if (isEditing) {
+      loadDataForEdit(Number(id));
     } else {
-      // Se for novo cadastro, pega o GPS automaticamente
-      getCurrentLocation();
+      askLocationPreference();
     }
   }, [id]);
 
-  async function loadAlertData(alertId: number) {
+  // Pergunta ao usuário se quer autodetectar ou preencher manual
+  function askLocationPreference() {
+    Alert.alert(
+      "Localização",
+      "Como deseja preencher o endereço do alerta?",
+      [
+        {
+          text: "Detectar pelo GPS",
+          onPress: () => fetchGPSAndReverseGeocode(),
+        },
+        {
+          text: "Preencher Manualmente",
+          style: "cancel",
+        },
+      ]
+    );
+  }
+
+  async function loadDataForEdit(alertId: number) {
     try {
-      setLoading(true);
-      const data = await alertsDb.show(alertId);
-      if (data) {
-        setTitle(data.title);
-        setCategory(data.category || "Buraco");
-        setObservation(data.observation || "");
-        setImageUri(data.ilink);
+      const alertData = await alertsDb.getById(alertId);
+      if (alertData) {
+        setTitle(alertData.title);
+        setCategory(alertData.category || "Buraco");
+        setZip(alertData.zip || "");
+        setStreet(alertData.street || "");
+        setNumber(alertData.number || "");
+        setNeighborhood(alertData.neighborhood || "");
+        setCity(alertData.city || "");
+        setComplement(alertData.complement || "");
+        setObservation(alertData.observation || "");
+        setImageUri(alertData.ilink || null);
         setLocation({
-          latitude: data.latitude,
-          longitude: data.longitude,
+          latitude: alertData.latitude,
+          longitude: alertData.longitude,
         });
-      } else {
-        Alert.alert("Erro", "Alerta não encontrado.");
-        router.back();
       }
     } catch (error) {
-      Alert.alert("Erro", "Falha ao carregar os dados do reporte.");
-    } finally {
-      setLoading(false);
+      Alert.alert("Erro", "Não foi possível carregar os dados do reporte.");
     }
   }
 
-  // 1. Obter Localização via GPS (expo-location)
-  async function getCurrentLocation() {
+  // Busca GPS e faz Geocodificação Reversa para preencher os campos automaticamente
+  async function fetchGPSAndReverseGeocode() {
     setLoadingLocation(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
         Alert.alert(
           "Permissão negada",
-          "Precisamos do acesso à localização para marcar o buraco no mapa."
+          "Permita o acesso à localização para autodetectar o endereço."
         );
         return;
       }
@@ -91,213 +111,199 @@ export default function AddOrEditAlert() {
         accuracy: Location.Accuracy.High,
       });
 
-      setLocation({
+      const coords = {
         latitude: currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude,
-      });
+      };
+
+      setLocation(coords);
+
+      // Converte coordenadas em Endereço Legível
+      const [address] = await Location.reverseGeocodeAsync(coords);
+      if (address) {
+        setZip(address.postalCode || "");
+        setStreet(address.street || address.name || "");
+        setNumber(address.streetNumber || "");
+        setNeighborhood(address.district || address.subregion || "");
+        setCity(address.city || address.region || "");
+      }
     } catch (error) {
-      Alert.alert("Erro", "Não foi possível obter a localização atual.");
+      Alert.alert("Erro", "Não foi possível obter o endereço atual.");
     } finally {
       setLoadingLocation(false);
     }
   }
 
-  // 2. Tirar Foto com Câmera
-  async function handleTakePicture() {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert("Permissão negada", "Permissão para acessar a câmera é necessária.");
+  async function handlePickImage() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permissão negada", "É preciso acesso à galeria para enviar fotos.");
       return;
     }
 
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.7,
-    });
-
-    if (!result.canceled && result.assets[0].uri) {
-      setImageUri(result.assets[0].uri);
-    }
-  }
-
-  // 3. Escolher Foto da Galeria
-  async function handlePickImage() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
       quality: 0.7,
+      allowsEditing: true,
     });
 
-    if (!result.canceled && result.assets[0].uri) {
+    if (!result.canceled) {
       setImageUri(result.assets[0].uri);
     }
   }
 
-  // Permite ajustar a posição tocando no Mapa
-  function handleMapPress(e: MapPressEvent) {
-    setLocation(e.nativeEvent.coordinate);
-  }
-
-  // 4. Salvar (Criar ou Atualizar)
   async function handleSave() {
     if (!title.trim()) {
-      Alert.alert("Atenção", "Por favor, digite um título para o alerta.");
+      Alert.alert("Atenção", "Por favor, preencha o título do alerta.");
       return;
     }
 
     if (!location) {
-      Alert.alert("Atenção", "É necessário capturar a localização do problema.");
+      Alert.alert(
+        "Atenção",
+        "É necessário capturar a localização (ou detectar pelo GPS) para cadastrar."
+      );
       return;
     }
 
-    try {
-      setLoading(true);
+    setSaving(true);
 
-      if (isEditing && id) {
-        // Atualizar
-        await alertsDb.update({
-          id: Number(id),
-          title: title.trim(),
-          category,
-          observation: observation.trim(),
-          ilink: imageUri,
-          latitude: location.latitude,
-          longitude: location.longitude,
-        });
-        Alert.alert("Sucesso", "Reporte atualizado com sucesso!");
+    try {
+      const payload = {
+        user_id: user?.id || 1,
+        title: title.trim(),
+        category,
+        zip,
+        street,
+        number,
+        neighborhood,
+        city,
+        complement,
+        observation,
+        ilink: imageUri || undefined,
+        latitude: location.latitude,
+        longitude: location.longitude,
+      };
+
+      if (isEditing) {
+        await alertsDb.update(Number(id), payload);
+        Alert.alert("Sucesso", "Alerta atualizado com sucesso!");
       } else {
-        // Criar (Mockando user_id como 1 por enquanto)
-        await alertsDb.create({
-          user_id: 1,
-          title: title.trim(),
-          category,
-          observation: observation.trim(),
-          ilink: imageUri,
-          latitude: location.latitude,
-          longitude: location.longitude,
-          status: "open",
-        });
-        Alert.alert("Sucesso", "Novo reporte cadastrado com sucesso!");
+        await alertsDb.create(payload);
+        Alert.alert("Sucesso", "Alerta cadastrado com sucesso!");
       }
 
-      router.replace("/dashboard");
+      router.back();
     } catch (error) {
-      Alert.alert("Erro", "Ocorreu um erro ao salvar o reporte.");
+      Alert.alert("Erro", "Ocorreu um erro ao salvar o alerta.");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
-  }
-
-  if (loading && isEditing && !title) {
-    return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color="#38bdf8" />
-      </View>
-    );
   }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
-      <Text style={styles.screenTitle}>
-        {isEditing ? "Editar Reporte" : "Novo Reporte"}
+      <Text style={styles.headerTitle}>
+        {isEditing ? "Editar Alerta" : "Novo Alerta"}
       </Text>
 
-      <Container gap={16} padding={0}>
-        {/* Formulário */}
-        <Input
-          value={title}
-          onChange={setTitle}
-          placeHodler="Título (ex: Buraco profundo na pista)"
-        />
+      {/* Botão de Redetectar GPS */}
+      <TouchableOpacity
+        style={styles.gpsButton}
+        onPress={fetchGPSAndReverseGeocode}
+        disabled={loadingLocation}
+      >
+        {loadingLocation ? (
+          <ActivityIndicator color="#38bdf8" />
+        ) : (
+          <Text style={styles.gpsButtonText}>
+            📍 {location ? "Atualizar por GPS (Auto)" : "Detectar Endereço por GPS"}
+          </Text>
+        )}
+      </TouchableOpacity>
 
-        <Input
-          value={category}
-          onChange={setCategory}
-          placeHodler="Categoria (ex: Buraco, Asfalto cedendo)"
-        />
-
-        <Input
-          value={observation}
-          onChange={setObservation}
-          placeHodler="Observações / Ponto de referência"
-        />
-
-        {/* Seção da Imagem */}
-        <Text style={styles.sectionLabel}>Foto do Local</Text>
+      {/* Seção da Foto */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Foto do Buraco/Problema</Text>
         {imageUri ? (
-          <View style={styles.imagePreviewContainer}>
+          <View style={styles.imageContainer}>
             <Image source={{ uri: imageUri }} style={styles.previewImage} />
             <TouchableOpacity
               style={styles.removeImageBtn}
               onPress={() => setImageUri(null)}
             >
-              <Text style={styles.removeImageText}>Remover Foto</Text>
+              <Text style={styles.removeImageText}>Remover</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={styles.photoActions}>
-            <TouchableOpacity style={styles.photoBtn} onPress={handleTakePicture}>
-              <Text style={styles.photoBtnText}>📷 Câmera</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.photoBtn} onPress={handlePickImage}>
-              <Text style={styles.photoBtnText}>🖼️ Galeria</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Seção do Mapa / GPS */}
-        <View style={styles.locationHeader}>
-          <Text style={styles.sectionLabel}>Localização no Mapa</Text>
-          <TouchableOpacity onPress={getCurrentLocation} disabled={loadingLocation}>
-            <Text style={styles.gpsLink}>
-              {loadingLocation ? "Buscando GPS..." : "🎯 Recapturar GPS"}
-            </Text>
+          <TouchableOpacity style={styles.uploadButton} onPress={handlePickImage}>
+            <Text style={styles.uploadButtonText}>📷 Selecionar Foto</Text>
           </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Formulário */}
+      <View style={styles.formGroup}>
+        <Text style={styles.label}>Título do Alerta *</Text>
+        <Input
+          value={title}
+          onChange={setTitle}
+          placeHodler="Ex: Buraco fundo na pista"
+        />
+
+        <Text style={styles.label}>CEP</Text>
+        <Input value={zip} onChange={setZip} placeHodler="00000-000" />
+
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <View style={{ flex: 2 }}>
+            <Text style={styles.label}>Rua / Avenida</Text>
+            <Input
+              value={street}
+              onChange={setStreet}
+              placeHodler="Nome da via"
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>Número</Text>
+            <Input value={number} onChange={setNumber} placeHodler="123" />
+          </View>
         </View>
 
-        {location ? (
-          <View style={styles.mapContainer}>
-            <MapView
-              style={styles.map}
-              onPress={handleMapPress}
-              region={{
-                latitude: location.latitude,
-                longitude: location.longitude,
-                latitudeDelta: 0.005,
-                longitudeDelta: 0.005,
-              }}
-            >
-              <Marker
-                coordinate={location}
-                draggable
-                onDragEnd={(e) => setLocation(e.nativeEvent.coordinate)}
-                title="Local do problema"
-                description="Arraste para ajustar"
-              />
-            </MapView>
-            <Text style={styles.mapHint}>Toque no mapa para ajustar o ponto exato</Text>
-          </View>
-        ) : (
-          <View style={styles.mapPlaceholder}>
-            <ActivityIndicator color="#38bdf8" />
-            <Text style={styles.mapPlaceholderText}>Obtendo sinal do GPS...</Text>
-          </View>
-        )}
+        <Text style={styles.label}>Bairro</Text>
+        <Input
+          value={neighborhood}
+          onChange={setNeighborhood}
+          placeHodler="Nome do bairro"
+        />
 
-        {/* Botões Salvar / Cancelar */}
-        <View style={styles.actions}>
-          <Button
-            text={loading ? "Salvando..." : isEditing ? "Atualizar" : "Cadastrar"}
-            onPress={handleSave}
-          />
-          <TouchableOpacity style={styles.cancelBtn} onPress={() => router.back()}>
-            <Text style={styles.cancelBtnText}>Cancelar</Text>
-          </TouchableOpacity>
-        </View>
-      </Container>
+        <Text style={styles.label}>Cidade</Text>
+        <Input value={city} onChange={setCity} placeHodler="Nome da cidade" />
+
+        <Text style={styles.label}>Complemento / Ponto de Referência</Text>
+        <Input
+          value={complement}
+          onChange={setComplement}
+          placeHodler="Ex: Próximo à padaria"
+        />
+
+        <Text style={styles.label}>Observações Adicionais</Text>
+        <Input
+          value={observation}
+          onChange={setObservation}
+          placeHodler="Detalhes sobre os riscos ou tamanho"
+        />
+      </View>
+
+      {/* Ações */}
+      <View style={styles.actions}>
+        <Button
+          text={saving ? "Salvando..." : isEditing ? "Atualizar" : "Salvar Alerta"}
+          onPress={handleSave}
+        />
+        <TouchableOpacity style={styles.cancelBtn} onPress={() => router.back()}>
+          <Text style={styles.cancelBtnText}>Cancelar</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -306,106 +312,78 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#020617",
-    paddingHorizontal: 20,
+    padding: 20,
     paddingTop: 50,
   },
-  center: {
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  screenTitle: {
+  headerTitle: {
     fontSize: 28,
     fontWeight: "bold",
     color: "#ffffff",
+    marginBottom: 16,
+  },
+  gpsButton: {
+    backgroundColor: "#1e293b",
+    borderColor: "#38bdf8",
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    alignItems: "center",
     marginBottom: 20,
   },
-  sectionLabel: {
-    color: "#94a3b8",
+  gpsButtonText: {
+    color: "#38bdf8",
+    fontWeight: "600",
+  },
+  section: {
+    marginBottom: 20,
+  },
+  label: {
+    color: "#cbd5e1",
     fontSize: 14,
     fontWeight: "600",
-    marginTop: 8,
+    marginTop: 10,
+    marginBottom: 6,
   },
-  photoActions: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  photoBtn: {
-    flex: 1,
-    backgroundColor: "#1e293b",
-    padding: 14,
-    borderRadius: 8,
-    alignItems: "center",
+  uploadButton: {
+    backgroundColor: "#0f172a",
     borderWidth: 1,
     borderColor: "#334155",
-  },
-  photoBtnText: {
-    color: "#ffffff",
-    fontWeight: "600",
-  },
-  imagePreviewContainer: {
+    borderStyle: "dashed",
+    borderRadius: 8,
+    padding: 20,
     alignItems: "center",
-    gap: 8,
+  },
+  uploadButtonText: {
+    color: "#94a3b8",
+  },
+  imageContainer: {
+    position: "relative",
   },
   previewImage: {
     width: "100%",
     height: 180,
-    borderRadius: 10,
+    borderRadius: 8,
   },
   removeImageBtn: {
-    padding: 6,
+    position: "absolute",
+    top: 10,
+    right: 10,
+    backgroundColor: "rgba(239, 68, 68, 0.8)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
   },
   removeImageText: {
-    color: "#f87171",
-    fontSize: 13,
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "bold",
   },
-  locationHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 8,
-  },
-  gpsLink: {
-    color: "#38bdf8",
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  mapContainer: {
-    height: 200,
-    borderRadius: 10,
-    overflow: "hidden",
-  },
-  map: {
-    width: "100%",
-    height: "100%",
-  },
-  mapHint: {
-    position: "absolute",
-    bottom: 6,
-    left: 10,
-    backgroundColor: "rgba(15, 23, 42, 0.8)",
-    color: "#cbd5e1",
-    fontSize: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  mapPlaceholder: {
-    height: 150,
-    backgroundColor: "#0f172a",
-    borderRadius: 10,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "#1e293b",
-  },
-  mapPlaceholderText: {
-    color: "#64748b",
-    fontSize: 13,
+  formGroup: {
+    gap: 4,
   },
   actions: {
-    gap: 12,
-    marginTop: 10,
+    marginTop: 24,
+    gap: 10,
   },
   cancelBtn: {
     padding: 12,
@@ -413,6 +391,5 @@ const styles = StyleSheet.create({
   },
   cancelBtnText: {
     color: "#94a3b8",
-    fontSize: 15,
   },
 });

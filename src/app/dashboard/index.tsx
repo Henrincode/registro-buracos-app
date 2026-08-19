@@ -12,8 +12,10 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import MapView, { Marker } from "react-native-maps";
+
 import Button from "@/components/Button";
 import { useAlertsDatabase, AlertResponse } from "@/data/useAlertsDatabase";
+import { useAuth } from "@/app/_layout";
 
 export default function Dashboard() {
   const [alerts, setAlerts] = useState<AlertResponse[]>([]);
@@ -21,8 +23,8 @@ export default function Dashboard() {
   const [modalVisible, setModalVisible] = useState(false);
 
   const alertsDb = useAlertsDatabase();
+  const { user, signOut } = useAuth();
 
-  // Carrega todos os reportes do banco
   async function loadAlerts() {
     try {
       const data = await alertsDb.listAll();
@@ -36,13 +38,11 @@ export default function Dashboard() {
     loadAlerts();
   }, []);
 
-  // Abre o modal de perfil/detalhes do buraco
   function handleOpenDetails(item: AlertResponse) {
     setSelectedAlert(item);
     setModalVisible(true);
   }
 
-  // Deleta o alerta após confirmação
   async function handleDeleteAlert(id: number) {
     Alert.alert("Excluir Reporte", "Deseja realmente remover este alerta?", [
       { text: "Cancelar", style: "cancel" },
@@ -63,6 +63,24 @@ export default function Dashboard() {
     ]);
   }
 
+  function handleLogout() {
+    signOut();
+    router.replace("/");
+  }
+
+  function formatAddress(item: AlertResponse) {
+    const parts = [
+      item.street ? `${item.street}${item.number ? `, ${item.number}` : ""}` : null,
+      item.neighborhood,
+      item.city,
+    ].filter(Boolean);
+
+    if (parts.length > 0) {
+      return parts.join(" - ");
+    }
+    return item.observation || "Endereço não informado";
+  }
+
   return (
     <View style={styles.container}>
       {/* Cabeçalho */}
@@ -70,15 +88,21 @@ export default function Dashboard() {
         <View>
           <Text style={styles.headerTitle}>Desvia.AI!</Text>
           <Text style={styles.headerSubtitle}>
-            {alerts.length} buracos reportados
+            Olá, {user?.name || "Usuário"} ({alerts.length} reportes)
           </Text>
         </View>
-        <TouchableOpacity
-          style={styles.mapButton}
-          onPress={() => router.push("/full-map")}
-        >
-          <Text style={styles.mapButtonText}>Mapa Completo</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TouchableOpacity
+            style={styles.mapButton}
+            onPress={() => router.push("/full-map")}
+          >
+            <Text style={styles.mapButtonText}>Mapa Completo</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+            <Text style={styles.logoutText}>Sair</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Lista de Cards */}
@@ -92,7 +116,6 @@ export default function Dashboard() {
             activeOpacity={0.8}
             onPress={() => handleOpenDetails(item)}
           >
-            {/* Foto do problema */}
             {item.ilink ? (
               <Image source={{ uri: item.ilink }} style={styles.cardImage} />
             ) : (
@@ -103,8 +126,8 @@ export default function Dashboard() {
 
             <View style={styles.cardContent}>
               <Text style={styles.cardTitle}>{item.title}</Text>
-              <Text style={styles.cardAddress} numberOfLines={1}>
-                📍 {item.observation || "Endereço não informado"}
+              <Text style={styles.cardAddress} numberOfLines={2}>
+                📍 {formatAddress(item)}
               </Text>
               <View style={styles.cardFooter}>
                 <Text style={styles.cardAuthor}>Por: {item.user_name}</Text>
@@ -117,9 +140,7 @@ export default function Dashboard() {
         )}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>
-              Nenhum buraco reportado ainda.
-            </Text>
+            <Text style={styles.emptyText}>Nenhum buraco reportado ainda.</Text>
           </View>
         }
       />
@@ -133,7 +154,7 @@ export default function Dashboard() {
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
 
-      {/* Modal de Detalhes / Perfil do Buraco */}
+      {/* Modal de Detalhes do Buraco */}
       <Modal
         visible={modalVisible}
         animationType="slide"
@@ -144,7 +165,6 @@ export default function Dashboard() {
           <View style={styles.modalContent}>
             {selectedAlert && (
               <ScrollView showsVerticalScrollIndicator={false}>
-                {/* Imagem Ampliada */}
                 {selectedAlert.ilink ? (
                   <Image
                     source={{ uri: selectedAlert.ilink }}
@@ -160,11 +180,35 @@ export default function Dashboard() {
                 <Text style={styles.modalAuthor}>
                   Reportado por: {selectedAlert.user_name} ({selectedAlert.user_email})
                 </Text>
-                <Text style={styles.modalDescription}>
-                  {selectedAlert.observation || "Sem observações adicionais."}
-                </Text>
 
-                {/* Quadrado do Mapa exibindo o ponto exato */}
+                {/* Bloco de Endereço Detalhado */}
+                <View style={styles.addressBox}>
+                  <Text style={styles.addressBoxTitle}>📍 Endereço Detalhado:</Text>
+                  {selectedAlert.street && (
+                    <Text style={styles.addressText}>
+                      Rua: {selectedAlert.street}{selectedAlert.number ? `, nº ${selectedAlert.number}` : ""}
+                    </Text>
+                  )}
+                  {selectedAlert.neighborhood && (
+                    <Text style={styles.addressText}>Bairro: {selectedAlert.neighborhood}</Text>
+                  )}
+                  {selectedAlert.city && (
+                    <Text style={styles.addressText}>Cidade: {selectedAlert.city}</Text>
+                  )}
+                  {selectedAlert.zip && (
+                    <Text style={styles.addressText}>CEP: {selectedAlert.zip}</Text>
+                  )}
+                  {selectedAlert.complement && (
+                    <Text style={styles.addressText}>Ref/Comp: {selectedAlert.complement}</Text>
+                  )}
+                </View>
+
+                {selectedAlert.observation && (
+                  <Text style={styles.modalDescription}>
+                    Observações: {selectedAlert.observation}
+                  </Text>
+                )}
+
                 <Text style={styles.mapLabel}>Localização no Mapa:</Text>
                 <View style={styles.mapContainer}>
                   <MapView
@@ -186,7 +230,6 @@ export default function Dashboard() {
                   </MapView>
                 </View>
 
-                {/* Botões de Ação */}
                 <View style={styles.modalActions}>
                   <Button
                     text="Editar"
@@ -224,7 +267,7 @@ export default function Dashboard() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#020617", // slate 950
+    backgroundColor: "#020617",
     paddingHorizontal: 16,
     paddingTop: 50,
   },
@@ -240,12 +283,12 @@ const styles = StyleSheet.create({
     color: "#ffffff",
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#94a3b8",
   },
   mapButton: {
     backgroundColor: "#1e293b",
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
@@ -253,6 +296,17 @@ const styles = StyleSheet.create({
   },
   mapButtonText: {
     color: "#38bdf8",
+    fontWeight: "600",
+    fontSize: 12,
+  },
+  logoutButton: {
+    backgroundColor: "#7f1d1d",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  logoutText: {
+    color: "#ffffff",
     fontWeight: "600",
     fontSize: 12,
   },
@@ -358,10 +412,26 @@ const styles = StyleSheet.create({
     color: "#38bdf8",
     marginVertical: 4,
   },
+  addressBox: {
+    backgroundColor: "#1e293b",
+    padding: 12,
+    borderRadius: 8,
+    marginVertical: 10,
+  },
+  addressBoxTitle: {
+    color: "#38bdf8",
+    fontWeight: "bold",
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  addressText: {
+    color: "#cbd5e1",
+    fontSize: 13,
+  },
   modalDescription: {
     fontSize: 14,
     color: "#cbd5e1",
-    marginVertical: 10,
+    marginBottom: 10,
   },
   mapLabel: {
     color: "#ffffff",
